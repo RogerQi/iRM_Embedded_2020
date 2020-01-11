@@ -60,6 +60,6 @@ int32_t print(const char *format, ...) {
   if (print_uart) 
     return print_uart->Write((uint8_t*)buffer, length);  
   else
-    return usb_transmit((uint8_t*)buffer, length);  
+    return BSP::usb_write((uint8_t*)buffer, length);  
 #endif // #ifdef NDEBUG
 }

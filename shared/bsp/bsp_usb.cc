@@ -18,29 +18,75 @@
  *                                                                          *
  ****************************************************************************/
 
+#include "cmsis_os.h"
 #include "bsp_usb.h"
 
-static usb_callback_t rm_usb_rx_callback = NULL;
+namespace BSP {
 
-void usb_register_callback(const usb_callback_t callback) {
-  rm_usb_rx_callback = callback;
+static struct {
+  uint8_t *write = NULL;
+  uint8_t *read = NULL;
+  uint32_t size = 0;
+  uint32_t count = 0;
+  usb_callback_t callback = NULL;
+} usb_rx;
+
+static void usb_data_ready(uint8_t *data, uint32_t length) {
+  if (usb_rx.write) {
+    if (length + usb_rx.count > usb_rx.size)
+      length = usb_rx.size - usb_rx.count;
+    memcpy(usb_rx.write + usb_rx.count, data, length);
+    usb_rx.count += length;
+  }
+  // optional rx notification callback
+  if (usb_rx.callback)
+    usb_rx.callback();
 }
 
-void usb_unregister_callback(void) {
-  rm_usb_rx_callback = NULL;
+void usb_setup_rx(uint32_t buffer_size, usb_callback_t callback) {
+  if (usb_rx.write || usb_rx.read) {
+    delete[] usb_rx.write;
+    delete[] usb_rx.read;
+  }
+
+  usb_rx.write = new uint8_t[buffer_size];
+  usb_rx.read = new uint8_t[buffer_size];
+  usb_rx.size = buffer_size;
+  usb_rx.count = 0;
+  usb_rx.callback = callback;
 }
 
-int32_t usb_transmit(uint8_t *buf, uint32_t len) {
-  uint8_t status = CDC_Transmit_FS(buf, (uint16_t)len);
+int32_t usb_write(uint8_t *data, uint32_t length) {
+  uint8_t status;
+
+  while ((status = CDC_Transmit_FS(data, (uint16_t)length)) == USBD_BUSY);
   if (status == USBD_OK)
-    return len;
-  else if (status == USBD_BUSY)
-    return -1;
-  else // status == USBD_FAIL (shouldn't get here)
-    return -2;
+    return length;
+  else
+    return -1; 
 }
+
+int32_t usb_read(uint8_t **data) {
+  if (!data || !usb_rx.size)
+    return -1;
+
+  int32_t ret;
+  uint8_t *tmp;
+  taskENTER_CRITICAL();
+  ret = usb_rx.count;
+  usb_rx.count = 0;
+  tmp = usb_rx.write;
+  usb_rx.write = usb_rx.read;
+  usb_rx.read = tmp;
+  taskEXIT_CRITICAL();
+
+  *data = usb_rx.read;
+  return ret;
+}
+
+} /* namespace BSP */
 
 void RM_USB_RxCplt_Callback(uint8_t *Buf, uint32_t Len) {
-  if (rm_usb_rx_callback)
-    rm_usb_rx_callback(Buf, Len);
+  BSP::usb_data_ready(Buf, Len);
 }
+

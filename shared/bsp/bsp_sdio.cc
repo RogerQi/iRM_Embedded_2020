@@ -29,7 +29,6 @@ bool SDFileLogger::mounted_ = false;
 SDFileLogger::SDFileLogger(const char *filename) {
   // lazy initial mounting
   if (!mounted_) {
-    osDelay(100); // wait for default thread to finish initializing FatFS
     f_mount(&SDFatFS, SDPath, 0);
     mounted_ = true;
   }
